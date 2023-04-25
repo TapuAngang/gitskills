@@ -10,7 +10,8 @@ module ConvAccum
     parameter InputDim = 4,
     parameter KernelSize = 9,
     parameter MaxRowWidth = 9,
-    parameter MaxColWidth = 9
+    parameter MaxColWidth = 9,
+    parameter AddrWidth = 16
 )
 (
     Clk,
@@ -25,12 +26,12 @@ module ConvAccum
     data_in,
     data_valid,
 
-    accum_request,
-    accum_in,
-    accum_valid,
+    rd_addr_conv,
+    rd_data_conv,
 
-    result_out,
-    result_ready
+    wr_addr_conv,
+    wr_data_conv,
+    wr_en_conv
 );
 
     input                               Clk;
@@ -45,19 +46,20 @@ module ConvAccum
     input [InputDim*DataWidth-1: 0]     data_in;
     input                               data_valid;
 
-    output                              accum_request;  //标志着第一个卷积结果已经产生，向外界索要累加数据
-    input [DataWidth-1: 0]              accum_in;       //累加数据输入通道
-    input                               accum_valid;    //累加数据输入有效
+    output reg [AddrWidth-1: 0]         rd_addr_conv;
+    input [DataWidth-1: 0]              rd_data_conv;
 
-    output [DataWidth-1: 0]             result_out;
-    output                              result_ready;
+    output reg [AddrWidth-1: 0]         wr_addr_conv;
+    output [DataWidth-1: 0]             wr_data_conv;
+    output                              wr_en_conv;
     
 
-    wire [DataWidth-1: 0]               conv_result;    //卷积结果数据
+    wire [DataWidth-1: 0]               conv_result;        //卷积结果数据
     wire                                conv_ready;
-    wire [DataWidth-1: 0]               conv_fifoed;    //经过fifo缓冲的卷积数据
 
-    wire                                add_valid;
+    reg [DataWidth-1: 0]                conv_result_delay;  //卷积结果打一拍
+    reg                                 conv_ready_delay;   //卷积结果有效信号打一拍
+
     wire                                add_ready;
     wire [DataWidth-1: 0]               add_result;
 
@@ -85,32 +87,47 @@ module ConvAccum
         .result_ready   (conv_ready)
     );
 
-    assign accum_request = conv_ready;
+    /*
+        rd_addr递增：由conv_ready触发
+        加法运算：由conv_ready_delay触发
+        wr_addr递增：由add_ready触发
+    */
 
-    //运算结果缓冲
-    Fifo16 UFifo16 (
-        .clk        (Clk),
-        .rst        (Rst),
-        .wr_data    (conv_result),
-        .wr_en      (conv_ready),
-        .rd_en      (accum_valid),
-        .rd_data    (conv_fifoed)
-    );
+    always @(posedge Clk) begin
+        if (Rst) begin
+            rd_addr_conv <= 0;
+            wr_addr_conv <= 0;
+            conv_result_delay <= 0;
+            conv_ready_delay <= 0;
+        end 
+        else begin
+            conv_result_delay <= conv_result;
+            conv_ready_delay <= conv_ready;
+            
+            if (conv_ready) begin    //conv_ready是读地址开始递增的标志
+                rd_addr_conv <= rd_addr_conv + 1;
+            end
+
+            if (add_ready) begin
+                wr_addr_conv <= wr_addr_conv + 1;
+            end
+        end
+    end
 
     //累加运算
-    assign add_valid = accum_valid & ~Rst; //原始累加数据有效，且未复位
+    assign add_valid = conv_ready_delay & ~Rst; //conv_ready之后，再等待一周期，从SRAM中取数完毕后再作加法（同时考虑Rst）
     Adder #(.DataWidth (DataWidth))
     Uadder (
         .aclk                   (Clk),
         .s_axis_a_tvalid        (add_valid),
-        .s_axis_a_tdata         (accum_in),
+        .s_axis_a_tdata         (rd_data_conv),
         .s_axis_b_tvalid        (add_valid),
-        .s_axis_b_tdata         (conv_fifoed),
+        .s_axis_b_tdata         (conv_result_delay),
         .m_axis_result_tvalid   (add_ready),
         .m_axis_result_tdata    (add_result)
     );
 
-    assign result_ready = add_ready;
-    assign result_out = add_result;
+    assign wr_en_conv = add_ready;
+    assign wr_data_conv = add_result;
 
 endmodule

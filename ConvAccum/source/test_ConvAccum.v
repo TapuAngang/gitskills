@@ -9,9 +9,10 @@
 
 module test_ConvAccum();
     parameter PictureSize = 6;
-    parameter PictureSize2 = 4;
+    //parameter PictureSize2 = 4;
     parameter DataWidth = 32;
     parameter KernelSize = 9;
+    parameter AddrWidth = 16;
 
     reg                     Clk;
     reg                     Rst;
@@ -24,12 +25,12 @@ module test_ConvAccum();
     reg [4*DataWidth-1: 0]  data_in;
     reg                     data_valid;
 
-    reg [DataWidth-1: 0]    accum_in;
-    reg                     accum_valid;
+    reg [DataWidth-1: 0]    rd_data_conv;
+    wire [AddrWidth-1: 0]   rd_addr_conv;
 
-    wire                    accum_request;
-    wire [DataWidth-1: 0]   result_out;
-    wire                    result_ready;
+    wire [AddrWidth-1: 0]   wr_addr_conv;
+    wire [DataWidth-1: 0]   wr_data_conv;
+    wire                    wr_en_conv;
 
     ConvAccum #(.DataWidth(DataWidth), .KernelSize(KernelSize))
     UConvAccum
@@ -45,12 +46,12 @@ module test_ConvAccum();
         .data_in        (data_in),
         .data_valid     (data_valid),
 
-        .accum_request  (accum_request),
-        .accum_in       (accum_in),
-        .accum_valid    (accum_valid),
+        .rd_addr_conv   (rd_addr_conv),
+        .rd_data_conv   (rd_data_conv),
 
-        .result_out     (result_out),
-        .result_ready   (result_ready)
+        .wr_addr_conv   (wr_addr_conv),
+        .wr_data_conv   (wr_data_conv),
+        .wr_en_conv      (wr_en_conv)
     );
 
     //复位/行列数信号控制--------------------------------------------------------
@@ -58,14 +59,6 @@ module test_ConvAccum();
         Rst <= 1;
         row_in <= PictureSize;
         col_in <= PictureSize;
-
-        #(2*`CLK_PRD);
-        Rst <= 0;
-
-        #(77*`CLK_PRD);
-        Rst <= 1;
-        row_in <= PictureSize2;
-        col_in <= PictureSize2;
 
         #(2*`CLK_PRD);
         Rst <= 0;
@@ -110,71 +103,12 @@ module test_ConvAccum();
 
         data_valid <= 0;
         data_in <= 0;
-
-        //等待复位
-        #(30*`CLK_PRD);
-
-        //第二次录入权重
-        weight_valid <= 1;
-        for (k = 0; k < KernelSize; k = k + 1) begin
-            weight_in[0 +: 32] <= $random % 10;
-            weight_in[32 +: 32] <= $random % 10;
-            weight_in[2*32 +: 32] <= $random % 10;
-            weight_in[3*32 +: 32] <= $random % 10;
-
-            #(`CLK_PRD);
-        end
-
-        weight_valid <= 0;
-        weight_in <= 0;
-
-        //第二次录入数据
-        #(4*`CLK_PRD);
-        data_valid <= 1;
-
-        for (i = 1; i <= PictureSize2; i = i + 1) begin
-            for (j = 1; j <= PictureSize2; j = j + 1) begin
-                data_in[3*32 +: 32] <= $random % 100;
-                data_in[2*32 +: 32] <= $random % 100;
-                data_in[32 +: 32] <= $random % 100;
-                data_in[0 +: 32] <= $random % 100;
-                #(`CLK_PRD);
-            end
-        end
-
-        data_valid <= 0;
-        data_in <= 0;
     end
 
     //累加数据输入----------------------------------------------------------------------------
-    integer m, n;
-    initial begin
-        accum_valid <= 0;
-        accum_in <= 0;
-
-        #(40*`CLK_PRD);
-        accum_valid <= 1;
-        for (m = 0; m < PictureSize; m = m + 1) begin
-            for (n = 0; n < PictureSize; n = n + 1) begin
-                accum_in <= $random % 1000;
-                #(`CLK_PRD);
-            end
-        end
-
-        accum_valid <= 0;
-        accum_in <= 0;
-
-        #(40*`CLK_PRD);
-        accum_valid <= 1;
-        for (m = 0; m < PictureSize2; m = m + 1) begin
-            for (n = 0; n < PictureSize2; n = n + 1) begin
-                accum_in <= $random % 1000;
-                #(`CLK_PRD);
-            end
-        end
-        
-        accum_valid <= 0;
-        accum_in <= 0;
+    always begin
+        rd_data_conv <= $random % 10000;
+        #(`CLK_PRD);
     end
 
     //数据输出--------------------------------------------------------------------------------
@@ -246,9 +180,9 @@ module test_ConvAccum();
     integer accum_signed;
     always begin
         #(`CLK_HALF);
-        if (accum_valid && ~Rst) begin
+        if (rd_addr_conv >= 1 && rd_addr_conv <= PictureSize*PictureSize && ~Rst) begin
             acount = acount + 1;
-            accum_signed = accum_in;
+            accum_signed = rd_data_conv;
             
             ap = $fopen("data/accum.txt", "a");
 
@@ -265,9 +199,9 @@ module test_ConvAccum();
     integer result_signed;
     always begin
         #(`CLK_HALF);
-        if (result_ready && ~Rst) begin
+        if (wr_en_conv && ~Rst) begin
             rcount = rcount + 1;
-            result_signed = result_out;
+            result_signed = wr_data_conv;
             
             rp = $fopen("data/result.txt", "a");
 
@@ -288,7 +222,7 @@ module test_ConvAccum();
     
     always begin
         #(1);
-        if ($stime >= 160*`CLK_PRD)
+        if ($stime >= 80*`CLK_PRD)
             $finish;
     end
 
