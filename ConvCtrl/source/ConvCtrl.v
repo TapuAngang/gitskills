@@ -86,7 +86,7 @@ module ConvCtrl
     wire [MaxPixelNum-1: 0]         wr_addr_conv;
     wire                            wr_en_conv;
     wire [DataWidth-1: 0]           rd_data_conv;
-    wire [MaxAddrWidth-1: 0]        rd_addr_conv;
+    wire [MaxPixelNum-1: 0]         rd_addr_conv;
 
     
 //状态转换---------------------------------------------------------------------------------------------------
@@ -260,11 +260,11 @@ module ConvCtrl
         .wr_data    (wr_data_conv),         // input [31:0]
         .wr_addr    (wr_addr_conv[9:0]),    // input [9:0]
         .wr_en      (wr_en_conv),           // input
-        .wr_clk     (Clk),                  // input
+        .wr_clk     (Clk0),                 // input
         .rd_addr    (rd_addr_conv[9:0]),    // input [9:0]
         .rd_data    (rd_data_conv),         // output [31:0]
-        .rd_clk     (Clk),                  // input
-        .rst        (Rst)                   // input
+        .rd_clk     (Clk0),                 // input
+        .rst        (Rst)                   // input，此处不赋Rst，直接置零
     );
 
 

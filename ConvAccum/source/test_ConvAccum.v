@@ -18,6 +18,7 @@ module test_ConvAccum();
     reg                     Rst;
     reg [8:0]               row_in;
     reg [8:0]               col_in;
+    reg                     conv_first;
 
     reg [4*DataWidth-1: 0]  weight_in;
     reg                     weight_valid;
@@ -59,6 +60,7 @@ module test_ConvAccum();
         Rst <= 1;
         row_in <= PictureSize;
         col_in <= PictureSize;
+        conv_first <= 0;
 
         #(2*`CLK_PRD);
         Rst <= 0;
