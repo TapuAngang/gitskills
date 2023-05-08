@@ -31,6 +31,7 @@ module test_ConvCtrl();
 
     reg [MaxPictWidth-1: 0]     pict_size_in;
     reg                         conv_first_in;
+    reg                         conv_last_in;
     reg                         inst_tag_in;
 
     reg [DataWidth-1: 0]        read_rdata_in;
@@ -38,6 +39,8 @@ module test_ConvCtrl();
     wire [MaxAddrWidth-1: 0]    read_addr_out;
     wire                        read_en_out;
 
+    wire                        write_en_out;
+    wire [DataWidth-1: 0]       write_data_out;
 
     ConvCtrl #(.DataWidth(DataWidth), .KernelSize(KernelSize))
     UConvCtrl
@@ -58,16 +61,20 @@ module test_ConvCtrl();
 
         .pict_size_in   (pict_size_in),
         .conv_first_in  (conv_first_in),
+        .conv_last_in   (conv_last_in),
         .inst_tag_in    (inst_tag_in),
 
         .read_rdata_in  (read_rdata_in),
 
         .read_addr_out  (read_addr_out),
-        .read_en_out    (read_en_out)
+        .read_en_out    (read_en_out),
+        .write_en_out   (write_en_out),
+        .write_data_out (write_data_out)
     );
 
     //复位与输入信号控制--------------------------------------------------------
     initial begin
+        //第一条指令
         Rst <= 1;
         weight_addr0_in <= 0;
         weight_addr1_in <= 9;
@@ -81,12 +88,14 @@ module test_ConvCtrl();
 
         pict_size_in <= PictureSize;
         conv_first_in <= 1;
+        conv_last_in <= 0;
         inst_tag_in <= 0;
 
         #(2*`CLK0_PRD);
         Rst <= 0;
 
         #(75*`CLK0_PRD);
+        //第二条指令
         Rst <= 1;
         weight_addr0_in <= 36;
         weight_addr1_in <= 45;
@@ -100,6 +109,25 @@ module test_ConvCtrl();
 
         conv_first_in <= 0;
         inst_tag_in <= 1;
+
+        #(2*`CLK0_PRD);
+        Rst <= 0;
+
+        #(75*`CLK0_PRD);
+        //第三条指令
+        Rst <= 1;
+        weight_addr0_in <= 72;
+        weight_addr1_in <= 81;
+        weight_addr2_in <= 90;
+        weight_addr3_in <= 99;
+
+        data_addr0_in <= 128 + 8*PictureSize*PictureSize;
+        data_addr1_in <= 128 + 9*PictureSize*PictureSize;
+        data_addr2_in <= 128 + 10*PictureSize*PictureSize;
+        data_addr3_in <= 128 + 11*PictureSize*PictureSize;
+
+        conv_last_in <= 1;
+        inst_tag_in <= 0;
 
         #(2*`CLK0_PRD);
         Rst <= 0;
@@ -196,6 +224,25 @@ module test_ConvCtrl();
         #(`CLK1_HALF);
     end
 
+    
+    //结果输出--------------------------------------------------------------------------------
+    //注意：结果在Clk0时钟域内
+    integer rcount = 0;
+    integer rp;
+    integer result;
+
+    always begin
+        #(`CLK0_HALF);
+        if (write_en_out && ~Rst) begin
+            result = write_data_out;
+            rp = $fopen("data/result.txt", "a");
+            $fwrite(rp, "%d%s", result, (rcount % PictureSize != PictureSize - 1)? ", " : ";\n");
+            $fclose(rp);
+            rcount = rcount + 1;
+        end
+        #(`CLK0_HALF);
+    end
+
 
     //时钟与进程结束------------------------------------------------------------------------------
     always begin
@@ -214,7 +261,7 @@ module test_ConvCtrl();
     
     always begin
         #(1);
-        if ($stime >= 160*`CLK0_PRD)
+        if ($stime >= 300*`CLK0_PRD)
             $finish;
     end
 

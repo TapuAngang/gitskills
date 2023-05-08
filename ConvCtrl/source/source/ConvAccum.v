@@ -11,7 +11,7 @@ module ConvAccum
     parameter KernelSize = 9,
     parameter MaxRowWidth = 9,
     parameter MaxColWidth = 9,
-    parameter AddrWidth = 18
+    parameter AddrWidth = 16        //18位->16位，考虑到BRAM大小不够，且第一次为视频输入，直接流过，无需缓存
 )
 (
     Clk,

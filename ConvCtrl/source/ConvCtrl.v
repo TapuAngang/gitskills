@@ -5,7 +5,8 @@ module ConvCtrl
     parameter KernelSize = 9,
     parameter MaxAddrWidth = 32,
     parameter MaxPictWidth = 9,
-    parameter MaxPixelNum = 18
+    parameter MaxPixelNum = 18,
+    parameter MaxRamWidth = 16
 )
 (
     Rst,
@@ -24,12 +25,16 @@ module ConvCtrl
 
     pict_size_in,
     conv_first_in,
+    conv_last_in,
     inst_tag_in,
 
     read_rdata_in,
 
     read_addr_out,
-    read_en_out
+    read_en_out,
+
+    write_en_out,
+    write_data_out
 );
 
     input                           Rst;
@@ -48,12 +53,17 @@ module ConvCtrl
     
     input [MaxPictWidth-1: 0]       pict_size_in;
     input                           conv_first_in;
+    input                           conv_last_in;
     input                           inst_tag_in;            //指令发生变化的标志
 
     input [DataWidth-1: 0]          read_rdata_in;
 
     output [MaxAddrWidth-1: 0]      read_addr_out;
     output                          read_en_out;
+
+    output                          write_en_out;
+    output [DataWidth-1: 0]         write_data_out;
+
 
     reg [1:0]                       state;
     reg [1:0]                       sub_count;              //将Clk0一分为四的计数器
@@ -82,11 +92,15 @@ module ConvCtrl
     wire                            weight_valid;           //向ConvAccum模块发送的权重有效和数据有效信号
     //wire                          data_valid;
 
-    wire [DataWidth-1: 0]           wr_data_conv;           //RAM连接
-    wire [MaxPixelNum-1: 0]         wr_addr_conv;
+    wire [DataWidth-1: 0]           wr_data_conv;           //ConvAccum连接
+    wire [MaxRamWidth-1: 0]         wr_addr_conv;
     wire                            wr_en_conv;
     wire [DataWidth-1: 0]           rd_data_conv;
-    wire [MaxPixelNum-1: 0]         rd_addr_conv;
+    wire [MaxRamWidth-1: 0]         rd_addr_conv;
+
+    wire [DataWidth-1: 0]           wr_data_ram;            //RAM连接
+    wire [MaxRamWidth: 0]           wr_addr_ram;
+    wire                            wr_en_ram;
 
     
 //状态转换---------------------------------------------------------------------------------------------------
@@ -256,16 +270,22 @@ module ConvCtrl
 
 
 //缓存控制---------------------------------------------------------------------------------------------------
+    assign wr_data_ram = (conv_last_in)? 0 : wr_data_conv;              //最后一次卷积，不写入
+    assign wr_addr_ram = (conv_last_in)? 0 : wr_addr_conv;              //_conv代表convaccum的输出，_ramdata代表接入ram的信号
+    assign wr_en_ram = (conv_last_in)? 0 : wr_en_conv;
+
     DisRAM UDisRAM (
-        .wr_data    (wr_data_conv),         // input [31:0]
-        .wr_addr    (wr_addr_conv[9:0]),    // input [9:0]
-        .wr_en      (wr_en_conv),           // input
+        .wr_data    (wr_data_ram),          // input [31:0]
+        .wr_addr    (wr_addr_ram[9:0]),     // input [9:0]              //~~~~~~~~~~~~~~~~~~待改~~~~~~~~~~~~~~~~~~~~
+        .wr_en      (wr_en_ram),            // input
         .wr_clk     (Clk0),                 // input
-        .rd_addr    (rd_addr_conv[9:0]),    // input [9:0]
+        .rd_addr    (rd_addr_conv[9:0]),    // input [9:0]              //~~~~~~~~~~~~~~~~~~待改~~~~~~~~~~~~~~~~~~~~
         .rd_data    (rd_data_conv),         // output [31:0]
         .rd_clk     (Clk0),                 // input
-        .rst        (Rst)                   // input，此处不赋Rst，直接置零
+        .rst        (Rst)                   // input
     );
 
+    assign write_en_out = (conv_last_in)? wr_en_conv : 0;               //最后一次卷积，结果不存入RAM，直接输出
+    assign write_data_out = (conv_last_in)? wr_data_conv : 0;
 
 endmodule
