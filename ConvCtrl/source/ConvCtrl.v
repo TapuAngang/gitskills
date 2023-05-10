@@ -274,16 +274,30 @@ module ConvCtrl
     assign wr_addr_ram = (conv_last_in)? 0 : wr_addr_conv;              //_conv代表convaccum的输出，_ramdata代表接入ram的信号
     assign wr_en_ram = (conv_last_in)? 0 : wr_en_conv;
 
-    DisRAM UDisRAM (
+    DRAM UDRAM (
         .wr_data    (wr_data_ram),          // input [31:0]
-        .wr_addr    (wr_addr_ram[9:0]),     // input [9:0]              //~~~~~~~~~~~~~~~~~~待改~~~~~~~~~~~~~~~~~~~~
+        .wr_addr    (wr_addr_ram),          // input [15:0]
         .wr_en      (wr_en_ram),            // input
         .wr_clk     (Clk0),                 // input
-        .rd_addr    (rd_addr_conv[9:0]),    // input [9:0]              //~~~~~~~~~~~~~~~~~~待改~~~~~~~~~~~~~~~~~~~~
+        .wr_rst     (Rst),                  // input
+        .rd_addr    (rd_addr_conv),         // input [15:0]
+        .rd_data    (rd_data_conv),         // output [31:0]
+        .rd_clk     (Clk0),                 // input
+        .rd_rst     (Rst)                   // input
+    );
+
+/*
+    DisRAM UDisRAM (
+        .wr_data    (wr_data_ram),          // input [31:0]
+        .wr_addr    (wr_addr_ram[9:0]),     // input [9:0]
+        .wr_en      (wr_en_ram),            // input
+        .wr_clk     (Clk0),                 // input
+        .rd_addr    (rd_addr_conv[9:0]),    // input [9:0]
         .rd_data    (rd_data_conv),         // output [31:0]
         .rd_clk     (Clk0),                 // input
         .rst        (Rst)                   // input
     );
+*/
 
     assign write_en_out = (conv_last_in)? wr_en_conv : 0;               //最后一次卷积，结果不存入RAM，直接输出
     assign write_data_out = (conv_last_in)? wr_data_conv : 0;
