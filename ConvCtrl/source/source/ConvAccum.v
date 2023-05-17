@@ -126,17 +126,16 @@ module ConvAccum
     end
 
     //累加运算
-    assign add_valid = conv_ready_delay & ~Rst & ~conv_first; //conv_ready之后，再等待一周期，从SRAM中取数完毕后再作加法（同时考虑Rst）
-    Adder #(.DataWidth (DataWidth))
-    Uadder (
-        .aclk                   (Clk),
-        .s_axis_a_tvalid        (add_valid),
-        .s_axis_a_tdata         (rd_data_conv),
-        .s_axis_b_tvalid        (add_valid),
-        .s_axis_b_tdata         (conv_result_delay),
-        .m_axis_result_tvalid   (add_ready),
-        .m_axis_result_tdata    (add_result)
-    );
+    assign add_valid = conv_ready_delay & ~conv_first; //conv_ready之后，再等待一周期，从SRAM中取数完毕后再作加法
+    Fadder UFadder (
+        .Clk        (Clk),
+        .Rst        (Rst),
+        .Valid      (add_valid),
+        .Number1    (rd_data_conv),
+        .Number2    (conv_result_delay),
+        .Result     (add_result),
+        .Ready      (add_ready) 
+      );
 
     assign rd_addr_conv = (conv_first) ? 0 : fore_count;
     assign wr_addr_conv = (conv_first) ? fore_count : back_count;

@@ -48,17 +48,26 @@ module ConvLayer
    wire                                add1_valid;       //add1表示树形累加的第一层
    wire [3:0]                          add1_ready;
    wire [4*DataWidth-1: 0]             add1_result;
-   reg  [DataWidth-1: 0]               mult9_delay1;     //第9个乘积不参与累加，需打三拍。delay1表示第一次寄存的结果。
+   reg  [DataWidth-1: 0]               mult9_delay11;    //第9个乘积不参与累加，需打三拍。delay1表示第一次寄存的结果。
+   reg  [DataWidth-1: 0]               mult9_delay12;
+   reg  [DataWidth-1: 0]               mult9_delay13;
+   reg  [DataWidth-1: 0]               mult9_delay14;
 
    wire                                add2_valid;       //add2表示树形累加的第二层
    wire [1:0]                          add2_ready;
    wire [2*DataWidth-1: 0]             add2_result;
-   reg  [DataWidth-1: 0]               mult9_delay2;     //delay2表示第二次寄存的结果
+   reg  [DataWidth-1: 0]               mult9_delay21;    //delay2表示第二次寄存的结果
+   reg  [DataWidth-1: 0]               mult9_delay22;
+   reg  [DataWidth-1: 0]               mult9_delay23;
+   reg  [DataWidth-1: 0]               mult9_delay24;
 
    wire                                add3_valid;       //add3表示树形累加的第三层
    wire                                add3_ready;
    wire [DataWidth-1: 0]               add3_result;
-   reg  [DataWidth-1: 0]               mult9_delay3;
+   reg  [DataWidth-1: 0]               mult9_delay31;
+   reg  [DataWidth-1: 0]               mult9_delay32;
+   reg  [DataWidth-1: 0]               mult9_delay33;
+   reg  [DataWidth-1: 0]               mult9_delay34;
 
    wire                                add4_valid;
    wire                                add4_ready;
@@ -84,113 +93,127 @@ module ConvLayer
    end
 
    //乘法计算
-   assign mult_valid = weight_ready & window_valid & ~Rst;
+   assign mult_valid = weight_ready & window_valid;
    genvar i;
    generate
       for (i = 0; i < KernelSize; i = i+1) begin
-         Mult #(.DataWidth(DataWidth))
-         UMult (
-            .aclk                 (Clk),
-            .s_axis_a_tvalid      (mult_valid),
-            .s_axis_a_tdata       (window_in     [i * DataWidth +: DataWidth]),
-            .s_axis_b_tvalid      (mult_valid),
-            .s_axis_b_tdata       (weight_reg    [i * DataWidth +: DataWidth]),
-            .m_axis_result_tvalid (mult_ready    [i]),
-            .m_axis_result_tdata  (mult_result   [i * DataWidth +: DataWidth])
+         Fmult UFmult (
+            .Clk        (Clk),
+            .Rst        (Rst),
+            .round_cfg  (1),
+            .en         (mult_valid),
+            .flout_a    (window_in     [i * DataWidth +: DataWidth]),
+            .flout_b    (weight_reg    [i * DataWidth +: DataWidth]),
+            .flout_c    (mult_result   [i * DataWidth +: DataWidth]),
+            .ready      (mult_ready    [i]) 
          );
       end
    endgenerate
 
    //树状累加
    //第一层
-   assign add1_valid = &mult_ready & ~Rst;   //此处等待所有乘法运算完毕，再统一推进流水线（实际上所有乘法在同一周期完成）
-                                             //Rst汇入所有的valid信号，实现对乘加器的同步清零
+   assign add1_valid = &mult_ready;   //此处等待所有乘法运算完毕，再统一推进流水线（实际上所有乘法在同一周期完成）
    genvar j;
    generate
       for (j = 0; j < 4; j = j + 1) begin
-         Adder #(.DataWidth(DataWidth))
-         UAdder (
-            .aclk                   (Clk),
-            .s_axis_a_tvalid        (add1_valid),
-            .s_axis_a_tdata         (mult_result[2*j*DataWidth +: DataWidth]),
-            .s_axis_b_tvalid        (add1_valid),
-            .s_axis_b_tdata         (mult_result[(2*j+1)*DataWidth +: DataWidth]),
-            .m_axis_result_tvalid   (add1_ready[j]),
-            .m_axis_result_tdata    (add1_result[j * DataWidth +: DataWidth])
+         Fadder UFadder (
+            .Clk        (Clk),
+            .Rst        (Rst),
+            .Valid      (add1_valid),
+            .Number1    (mult_result[2*j*DataWidth +: DataWidth]),
+            .Number2    (mult_result[(2*j+1)*DataWidth +: DataWidth]),
+            .Result     (add1_result[j * DataWidth +: DataWidth]),
+            .Ready      (add1_ready[j]) 
          );
       end
    endgenerate
    //第9个乘积不作加法，保存1周期
    always @(posedge Clk) begin
-      if (Rst)
-         mult9_delay1 <= 0;
-      else if (add1_valid)
-         mult9_delay1 <= mult_result[8*DataWidth +: DataWidth];
-      else
-         ;
+      if (Rst) begin
+         mult9_delay11 <= 0;
+         mult9_delay12 <= 0;
+         mult9_delay13 <= 0;
+         mult9_delay14 <= 0;
+      end
+      else begin
+         mult9_delay11 <= mult_result[8*DataWidth +: DataWidth];
+         mult9_delay12 <= mult9_delay11;
+         mult9_delay13 <= mult9_delay12;
+         mult9_delay14 <= mult9_delay13;
+      end
    end
 
    //第二层
-   assign add2_valid = &add1_ready & ~Rst;
+   assign add2_valid = &add1_ready;
    genvar k;
    generate
       for (k = 0; k < 2; k = k + 1) begin
-         Adder #(.DataWidth(DataWidth))
-         UAdder (
-            .aclk                   (Clk),
-            .s_axis_a_tvalid        (add2_valid),
-            .s_axis_a_tdata         (add1_result[2*k*DataWidth +: DataWidth]),
-            .s_axis_b_tvalid        (add2_valid),
-            .s_axis_b_tdata         (add1_result[(2*k+1)*DataWidth +: DataWidth]),
-            .m_axis_result_tvalid   (add2_ready[k]),
-            .m_axis_result_tdata    (add2_result[k * DataWidth +: DataWidth])
+         Fadder UFadder (
+            .Clk        (Clk),
+            .Rst        (Rst),
+            .Valid      (add2_valid),
+            .Number1    (add1_result[2*k*DataWidth +: DataWidth]),
+            .Number2    (add1_result[(2*k+1)*DataWidth +: DataWidth]),
+            .Result     (add2_result[k * DataWidth +: DataWidth]),
+            .Ready      (add2_ready[k]) 
          );
       end
    endgenerate
    //第9个乘积不作加法，再保存1周期
    always @(posedge Clk) begin
-      if (Rst)
-         mult9_delay2 <= 0;
-      else if (add2_valid)
-         mult9_delay2 <= mult9_delay1;
-      else
-         ;
+      if (Rst) begin
+         mult9_delay21 <= 0;
+         mult9_delay22 <= 0;
+         mult9_delay23 <= 0;
+         mult9_delay24 <= 0;
+      end
+      else if (add2_valid) begin
+         mult9_delay21 <= mult9_delay14;
+         mult9_delay22 <= mult9_delay21;
+         mult9_delay23 <= mult9_delay22;
+         mult9_delay24 <= mult9_delay23;
+      end
    end
 
    //第三层
-   assign add3_valid = &add2_ready & ~Rst;
-   Adder #(.DataWidth(DataWidth))
-   UAdder3 (
-      .aclk                   (Clk),
-      .s_axis_a_tvalid        (add3_valid),
-      .s_axis_a_tdata         (add2_result[0 +: DataWidth]),
-      .s_axis_b_tvalid        (add3_valid),
-      .s_axis_b_tdata         (add2_result[DataWidth +: DataWidth]),
-      .m_axis_result_tvalid   (add3_ready),
-      .m_axis_result_tdata    (add3_result)
-   );
+   assign add3_valid = &add2_ready;
+   Fadder UFadder3 (
+         .Clk        (Clk),
+         .Rst        (Rst),
+         .Valid      (add3_valid),
+         .Number1    (add2_result[0 +: DataWidth]),
+         .Number2    (add2_result[DataWidth +: DataWidth]),
+         .Result     (add3_result),
+         .Ready      (add3_ready) 
+      );
+
    //第9个乘积不作加法，再再保存1周期
    always @(posedge Clk) begin
-      if (Rst)
-         mult9_delay3 <= 0;
-      else if (add3_valid)
-         mult9_delay3 <= mult9_delay2;
-      else
-         ;
+      if (Rst) begin
+         mult9_delay31 <= 0;
+         mult9_delay32 <= 0;
+         mult9_delay33 <= 0;
+         mult9_delay34 <= 0;
+      end
+      else begin
+         mult9_delay31 <= mult9_delay24;
+         mult9_delay32 <= mult9_delay31;
+         mult9_delay33 <= mult9_delay32;
+         mult9_delay34 <= mult9_delay33;
+      end
    end
 
    //第四层
-   assign add4_valid = add3_ready & ~Rst;
-   Adder #(.DataWidth(DataWidth))
-   UAdder4 (
-      .aclk                   (Clk),
-      .s_axis_a_tvalid        (add4_valid),
-      .s_axis_a_tdata         (add3_result),
-      .s_axis_b_tvalid        (add4_valid),
-      .s_axis_b_tdata         (mult9_delay3),
-      .m_axis_result_tvalid   (add4_ready),
-      .m_axis_result_tdata    (add4_result)
-   );
+   assign add4_valid = add3_ready;
+   Fadder UFadder4 (
+        .Clk        (Clk),
+        .Rst        (Rst),
+        .Valid      (add4_valid),
+        .Number1    (add3_result),
+        .Number2    (mult9_delay34),
+        .Result     (add4_result),
+        .Ready      (add4_ready) 
+      );
 
    assign result_ready  = add4_ready;
    assign result_out    = add4_result;

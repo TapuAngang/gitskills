@@ -122,43 +122,40 @@ module ConvChannel
 
    //将4个卷积结果进行树状累加
    //第一层
-   assign add1_valid = &conv_ready & ~Rst;      //valid信号需引入复位信号
+   assign add1_valid = &conv_ready;
    //1、2相加
-   Adder #(.DataWidth (DataWidth))
-   Uadder1 (
-      .aclk                   (Clk),
-      .s_axis_a_tvalid        (add1_valid),
-      .s_axis_a_tdata         (conv_result[0 +: DataWidth]),
-      .s_axis_b_tvalid        (add1_valid),
-      .s_axis_b_tdata         (conv_result[DataWidth +: DataWidth]),
-      .m_axis_result_tvalid   (add1_ready[0]),
-      .m_axis_result_tdata    (add1_result[0 +: DataWidth])
+   Fadder UFadder1 (
+        .Clk        (Clk),
+        .Rst        (Rst),
+        .Valid      (add1_valid),
+        .Number1    (conv_result[0 +: DataWidth]),
+        .Number2    (conv_result[DataWidth +: DataWidth]),
+        .Result     (add1_result[0 +: DataWidth]),
+        .Ready      (add1_ready[0]) 
    );
 
    //3、4相加
-   Adder #(.DataWidth (DataWidth))
-   Uadder2 (
-      .aclk                   (Clk),
-      .s_axis_a_tvalid        (add1_valid),
-      .s_axis_a_tdata         (conv_result[2*DataWidth +: DataWidth]),
-      .s_axis_b_tvalid        (add1_valid),
-      .s_axis_b_tdata         (conv_result[3*DataWidth +: DataWidth]),
-      .m_axis_result_tvalid   (add1_ready[1]),
-      .m_axis_result_tdata    (add1_result[DataWidth +: DataWidth])
-   );
+   Fadder UFadder2 (
+        .Clk        (Clk),
+        .Rst        (Rst),
+        .Valid      (add1_valid),
+        .Number1    (conv_result[2*DataWidth +: DataWidth]),
+        .Number2    (conv_result[3*DataWidth +: DataWidth]),
+        .Result     (add1_result[DataWidth +: DataWidth]),
+        .Ready      (add1_ready[1]) 
+      );
 
    //第二层，两个加法的结果相加
-   assign add2_valid = &add1_ready & ~Rst;
-   Adder #(.DataWidth (DataWidth))
-   Uadder3 (
-      .aclk                   (Clk),
-      .s_axis_a_tvalid        (add2_valid),
-      .s_axis_a_tdata         (add1_result[0 +: DataWidth]),
-      .s_axis_b_tvalid        (add2_valid),
-      .s_axis_b_tdata         (add1_result[DataWidth +: DataWidth]),
-      .m_axis_result_tvalid   (add2_ready),
-      .m_axis_result_tdata    (add2_result)
-   );
+   assign add2_valid = &add1_ready;
+   Fadder UFadder3 (
+        .Clk        (Clk),
+        .Rst        (Rst),
+        .Valid      (add2_valid),
+        .Number1    (add1_result[0 +: DataWidth]),
+        .Number2    (add1_result[DataWidth +: DataWidth]),
+        .Result     (add2_result),
+        .Ready      (add2_ready) 
+      );
 
    assign result_out = add2_result;
    assign result_ready = add2_ready;

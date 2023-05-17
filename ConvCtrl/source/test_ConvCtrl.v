@@ -2,10 +2,10 @@
     ConvAccum仿真
     验证conv_first功能以及RAM存储功能
 */
-`timescale 100ps / 1ps
-`define CLK1_PRD 10
+`timescale 1ps / 1ps
+`define CLK1_PRD 5000                   //5ns
 `define CLK1_HALF (`CLK1_PRD / 2)
-`define CLK0_PRD (4*`CLK1_PRD)
+`define CLK0_PRD (4*`CLK1_PRD)          //20ns
 `define CLK0_HALF (`CLK0_PRD / 2)
 
 module test_ConvCtrl();
@@ -41,9 +41,10 @@ module test_ConvCtrl();
 
     wire                        write_en_out;
     wire [DataWidth-1: 0]       write_data_out;
+    wire                        inst_finish_out;
 
-    ConvCtrl #(.DataWidth(DataWidth), .KernelSize(KernelSize))
-    UConvCtrl
+    //ConvCtrl #(.DataWidth(DataWidth), .KernelSize(KernelSize))
+    ConvCtrl UConvCtrl
     (
         .Rst(Rst),
         .Clk0(Clk0),
@@ -69,7 +70,8 @@ module test_ConvCtrl();
         .read_addr_out  (read_addr_out),
         .read_en_out    (read_en_out),
         .write_en_out   (write_en_out),
-        .write_data_out (write_data_out)
+        .write_data_out (write_data_out),
+        .inst_finish_out(inst_finish_out)
     );
 
     //复位与输入信号控制--------------------------------------------------------
@@ -94,9 +96,9 @@ module test_ConvCtrl();
         #(2*`CLK0_PRD);
         Rst <= 0;
 
-        #(75*`CLK0_PRD);
+        #(90*`CLK0_PRD);
+
         //第二条指令
-        Rst <= 1;
         weight_addr0_in <= 36;
         weight_addr1_in <= 45;
         weight_addr2_in <= 54;
@@ -110,12 +112,9 @@ module test_ConvCtrl();
         conv_first_in <= 0;
         inst_tag_in <= 1;
 
-        #(2*`CLK0_PRD);
-        Rst <= 0;
 
-        #(75*`CLK0_PRD);
+        #(100*`CLK0_PRD);
         //第三条指令
-        Rst <= 1;
         weight_addr0_in <= 72;
         weight_addr1_in <= 81;
         weight_addr2_in <= 90;
@@ -129,13 +128,14 @@ module test_ConvCtrl();
         conv_last_in <= 1;
         inst_tag_in <= 0;
 
-        #(2*`CLK0_PRD);
-        Rst <= 0;
     end
 
     //权重/数据输入--------------------------------------------------------------
     always begin
-        read_rdata_in <= $random % 100;
+        read_rdata_in[31] <= $random % 2;
+        read_rdata_in[30: 23] <= 8'b0111_1101 + $random % 4;
+        read_rdata_in[22: 16] <= $random % 128;
+        read_rdata_in[15: 0] <= 0;
         #(`CLK1_PRD);
     end
 
@@ -143,12 +143,12 @@ module test_ConvCtrl();
     //数据输出--------------------------------------------------------------------------------
     integer wcount = 0;                             //权重计数器
     integer wp1, wp2, wp3, wp4;                     //权重文件指针
-    integer weight;                                 //权重变量，用于转化为有符号整数
+    reg [63:0] weight;                              //权重变量，用于转化为双精度浮点数
 
     integer dcount = 0;                             //数据计数器
     integer chcount = 0;                            //通道计数器
     integer dp1, dp2, dp3, dp4;
-    integer data;
+    reg [63:0] data;
 
     always begin                                    //使用always块，每个周期检测权重有效信号
         #(`CLK1_HALF);
@@ -156,28 +156,31 @@ module test_ConvCtrl();
         if (read_en_out && ~Rst) begin
             if (wcount < 9) begin
 
-                //将线网变量转化为有符号整数，一个方法是借助integer
-                weight = read_rdata_in;
+                //将32位的单精度浮点数转化为64位的双精度浮点数
+                weight[63] = read_rdata_in[31];
+                weight[62: 52] = read_rdata_in[30: 23] + 896;
+                weight[51: 29] = read_rdata_in[22: 0];
+                weight[28: 0] = 0;
 
                 case (chcount % 4)
                     0: begin
                         wp1 = $fopen("data/weight1.txt", "a");  //路径为data文件夹下的weight1.txt
-                        $fwrite(wp1, "%d%s", weight, (wcount % 3 != 2)? ", " : ";\n");
+                        $fwrite(wp1, "%f%s", $bitstoreal(weight), (wcount % 3 != 2)? ", " : ";\n");
                         $fclose(wp1);
                     end
                     1: begin
                         wp2 = $fopen("data/weight2.txt", "a");
-                        $fwrite(wp2, "%d%s", weight, (wcount % 3 != 2)? ", " : ";\n");
+                        $fwrite(wp2, "%f%s", $bitstoreal(weight), (wcount % 3 != 2)? ", " : ";\n");
                         $fclose(wp2);
                     end
                     2: begin
                         wp3 = $fopen("data/weight3.txt", "a");
-                        $fwrite(wp3, "%d%s", weight, (wcount % 3 != 2)? ", " : ";\n");
+                        $fwrite(wp3, "%f%s", $bitstoreal(weight), (wcount % 3 != 2)? ", " : ";\n");
                         $fclose(wp3);
                     end
                     3: begin
                         wp4 = $fopen("data/weight4.txt", "a");
-                        $fwrite(wp4, "%d%s", weight, (wcount % 3 != 2)? ", " : ";\n");
+                        $fwrite(wp4, "%f%s", $bitstoreal(weight), (wcount % 3 != 2)? ", " : ";\n");
                         $fclose(wp4);
                     end
                 endcase
@@ -187,27 +190,30 @@ module test_ConvCtrl();
             end
             
             else begin
-                data = read_rdata_in;
+                data[63] = read_rdata_in[31];
+                data[62: 52] = read_rdata_in[30: 23] + 896;
+                data[51: 29] = read_rdata_in[22: 0];
+                data[28: 0] = 0;
 
                 case (chcount % 4)
                     0: begin
                         dp1 = $fopen("data/data1.txt", "a");
-                        $fwrite(dp1, "%d%s", data, (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
+                        $fwrite(dp1, "%f%s", $bitstoreal(data), (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
                         $fclose(dp1);
                     end
                     1: begin
                         dp2 = $fopen("data/data2.txt", "a");
-                        $fwrite(dp2, "%d%s", data, (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
+                        $fwrite(dp2, "%f%s", $bitstoreal(data), (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
                         $fclose(dp2);
                     end
                     2: begin
                         dp3 = $fopen("data/data3.txt", "a");
-                        $fwrite(dp3, "%d%s", data, (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
+                        $fwrite(dp3, "%f%s", $bitstoreal(data), (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
                         $fclose(dp3);
                     end
                     3: begin
                         dp4 = $fopen("data/data4.txt", "a");
-                        $fwrite(dp4, "%d%s", data, (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
+                        $fwrite(dp4, "%f%s", $bitstoreal(data), (dcount % PictureSize != PictureSize -1)? ", " : ";\n");
                         $fclose(dp4);
                     end
                 endcase
@@ -229,14 +235,18 @@ module test_ConvCtrl();
     //注意：结果在Clk0时钟域内
     integer rcount = 0;
     integer rp;
-    integer result;
+    reg [63:0] result;
 
     always begin
         #(`CLK0_HALF);
         if (write_en_out && ~Rst) begin
-            result = write_data_out;
+            result[63] = write_data_out[31];
+            result[62: 52] = write_data_out[30: 23] + 896;
+            result[51: 29] = write_data_out[22: 0];
+            result[28: 0] = 0;
+
             rp = $fopen("data/result.txt", "a");
-            $fwrite(rp, "%d%s", result, (rcount % PictureSize != PictureSize - 1)? ", " : ";\n");
+            $fwrite(rp, "%f%s", $bitstoreal(result), (rcount % PictureSize != PictureSize - 1)? ", " : ";\n");
             $fclose(rp);
             rcount = rcount + 1;
         end
